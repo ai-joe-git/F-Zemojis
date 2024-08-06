@@ -3,46 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emoji F-Zero</title>
+    <title>Space Emoji Shooter</title>
     <style>
         body, html {
             margin: 0;
             padding: 0;
             height: 100%;
             overflow: hidden;
-            background-color: #000;
+            font-family: Arial, sans-serif;
         }
         #gameCanvas {
             width: 100%;
             height: 100%;
+            background-color: #000033;
         }
         #hud {
             position: absolute;
             top: 10px;
             left: 10px;
             color: #fff;
-            font-family: Arial, sans-serif;
             font-size: 16px;
         }
-        #player {
+        #gameOver {
+            display: none;
             position: absolute;
-            bottom: 50px;
+            top: 50%;
             left: 50%;
-            transform: translateX(-50%);
-            font-size: 40px;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        #restartButton {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
     <div id="hud">
-        Energy: <span id="energy">100</span> | Boost: <span id="boost">100</span> | Speed: <span id="speed">0</span>
+        Score: <span id="score">0</span> | Lives: <span id="lives">3</span> | Health: <span id="health">100</span>
     </div>
-    <div id="player">🚀</div>
+    <div id="gameOver">
+        <h2>Game Over</h2>
+        <p>Your Score: <span id="finalScore"></span></p>
+        <h3>High Scores</h3>
+        <ol id="highScores"></ol>
+        <button id="restartButton">Restart</button>
+    </div>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const player = document.getElementById('player');
 
         let width, height;
 
@@ -56,79 +72,289 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        const gameState = {
-            x: 0,
-            y: 0,
-            speed: 0,
-            energy: 100,
-            boost: 100,
-            isBoosting: false
+        const player = {
+            x: width / 2,
+            y: height - 50,
+            size: 40,
+            speed: 5,
+            health: 100,
+            lives: 3,
+            score: 0
         };
 
-        function updateHUD() {
-            document.getElementById('energy').textContent = Math.round(gameState.energy);
-            document.getElementById('boost').textContent = Math.round(gameState.boost);
-            document.getElementById('speed').textContent = Math.round(gameState.speed);
+        const bullets = [];
+        const enemies = [];
+        const particles = [];
+        const powerUps = [];
+
+        const backgroundLayers = [
+            {emoji: '☁️', speed: 0.5, objects: []},
+            {emoji: '🌎', speed: 0.2, objects: []},
+            {emoji: '⭐', speed: 0.1, objects: []},
+            {emoji: '🪐', speed: 0.05, objects: []},
+            {emoji: '🌑', speed: 0.03, objects: []}
+        ];
+
+        let gameOver = false;
+        let highScores = [];
+
+        function initBackgroundLayers() {
+            backgroundLayers.forEach(layer => {
+                for (let i = 0; i < 20; i++) {
+                    layer.objects.push({
+                        x: Math.random() * width,
+                        y: Math.random() * height,
+                        size: Math.random() * 20 + 10
+                    });
+                }
+            });
         }
 
-        function drawRoad() {
-            ctx.fillStyle = '#4a4a4a';
-            ctx.fillRect(0, height/2, width, height/2);
+        function drawBackgroundLayers() {
+            backgroundLayers.forEach(layer => {
+                layer.objects.forEach(obj => {
+                    ctx.font = `${obj.size}px Arial`;
+                    ctx.fillText(layer.emoji, obj.x, obj.y);
+                    obj.y += layer.speed;
+                    if (obj.y > height) {
+                        obj.y = -obj.size;
+                        obj.x = Math.random() * width;
+                    }
+                });
+            });
         }
 
-        function updateGameState() {
-            if (gameState.isBoosting && gameState.boost > 0) {
-                gameState.speed = Math.min(gameState.speed + 2, 300);
-                gameState.boost = Math.max(gameState.boost - 0.5, 0);
-            } else {
-                gameState.speed = Math.max(gameState.speed - 1, 0);
-                gameState.boost = Math.min(gameState.boost + 0.1, 100);
+        function drawPlayer() {
+            ctx.font = `${player.size}px Arial`;
+            ctx.fillText('🚀', player.x, player.y);
+        }
+
+        function drawBullets() {
+            bullets.forEach(bullet => {
+                ctx.font = '20px Arial';
+                ctx.fillText('🔥', bullet.x, bullet.y);
+            });
+        }
+
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                ctx.font = `${enemy.size}px Arial`;
+                ctx.fillText(enemy.emoji, enemy.x, enemy.y);
+            });
+        }
+
+        function drawParticles() {
+            particles.forEach(particle => {
+                ctx.fillStyle = particle.color;
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawPowerUps() {
+            powerUps.forEach(powerUp => {
+                ctx.font = '30px Arial';
+                ctx.fillText(powerUp.emoji, powerUp.x, powerUp.y);
+            });
+        }
+
+        function updateBullets() {
+            bullets.forEach((bullet, index) => {
+                bullet.y -= 10;
+                if (bullet.y < 0) bullets.splice(index, 1);
+            });
+        }
+
+        function updateEnemies() {
+            if (Math.random() < 0.02) {
+                enemies.push({
+                    x: Math.random() * width,
+                    y: -30,
+                    size: 30,
+                    speed: Math.random() * 2 + 1,
+                    health: 20,
+                    emoji: ['👾', '👽', '🛸'][Math.floor(Math.random() * 3)]
+                });
             }
-            gameState.isBoosting = false;
+
+            enemies.forEach((enemy, index) => {
+                enemy.y += enemy.speed;
+                if (enemy.y > height) enemies.splice(index, 1);
+
+                if (Math.random() < 0.01) {
+                    bullets.push({x: enemy.x, y: enemy.y, enemy: true});
+                }
+            });
+        }
+
+        function updateParticles() {
+            particles.forEach((particle, index) => {
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.size *= 0.95;
+                if (particle.size < 0.5) particles.splice(index, 1);
+            });
+        }
+
+        function updatePowerUps() {
+            if (Math.random() < 0.001) {
+                powerUps.push({
+                    x: Math.random() * width,
+                    y: -30,
+                    emoji: Math.random() < 0.5 ? '🔫' : '❤️',
+                    speed: 2
+                });
+            }
+
+            powerUps.forEach((powerUp, index) => {
+                powerUp.y += powerUp.speed;
+                if (powerUp.y > height) powerUps.splice(index, 1);
+            });
+        }
+
+        function checkCollisions() {
+            bullets.forEach((bullet, bIndex) => {
+                if (!bullet.enemy) {
+                    enemies.forEach((enemy, eIndex) => {
+                        if (distance(bullet, enemy) < 20) {
+                            enemy.health -= 10;
+                            bullets.splice(bIndex, 1);
+                            createParticles(enemy.x, enemy.y, 10, '#FF0000');
+                            if (enemy.health <= 0) {
+                                enemies.splice(eIndex, 1);
+                                player.score += 100;
+                                createParticles(enemy.x, enemy.y, 20, '#FFFF00');
+                            }
+                        }
+                    });
+                } else {
+                    if (distance(bullet, player) < 20) {
+                        bullets.splice(bIndex, 1);
+                        player.health -= 10;
+                        createParticles(player.x, player.y, 10, '#FF0000');
+                        if (player.health <= 0) {
+                            player.lives--;
+                            if (player.lives > 0) {
+                                player.health = 100;
+                            } else {
+                                gameOver = true;
+                            }
+                        }
+                    }
+                }
+            });
+
+            powerUps.forEach((powerUp, index) => {
+                if (distance(powerUp, player) < 30) {
+                    if (powerUp.emoji === '🔫') {
+                        // Implement power-up effect
+                    } else if (powerUp.emoji === '❤️') {
+                        player.health = Math.min(player.health + 20, 100);
+                    }
+                    powerUps.splice(index, 1);
+                    createParticles(powerUp.x, powerUp.y, 15, '#00FF00');
+                }
+            });
+        }
+
+        function distance(obj1, obj2) {
+            return Math.hypot(obj1.x - obj2.x, obj1.y - obj2.y);
+        }
+
+        function createParticles(x, y, amount, color) {
+            for (let i = 0; i < amount; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: (Math.random() - 0.5) * 5,
+                    size: Math.random() * 5 + 2,
+                    color: color
+                });
+            }
+        }
+
+        function updateHUD() {
+            document.getElementById('score').textContent = player.score;
+            document.getElementById('lives').textContent = player.lives;
+            document.getElementById('health').textContent = player.health;
+        }
+
+        function showGameOver() {
+            document.getElementById('gameOver').style.display = 'block';
+            document.getElementById('finalScore').textContent = player.score;
+            updateHighScores();
+        }
+
+        function updateHighScores() {
+            highScores.push(player.score);
+            highScores.sort((a, b) => b - a);
+            highScores = highScores.slice(0, 5);
+            const highScoreList = document.getElementById('highScores');
+            highScoreList.innerHTML = '';
+            highScores.forEach(score => {
+                const li = document.createElement('li');
+                li.textContent = score;
+                highScoreList.appendChild(li);
+            });
+        }
+
+        function restartGame() {
+            player.x = width / 2;
+            player.y = height - 50;
+            player.health = 100;
+            player.lives = 3;
+            player.score = 0;
+            bullets.length = 0;
+            enemies.length = 0;
+            particles.length = 0;
+            powerUps.length = 0;
+            gameOver = false;
+            document.getElementById('gameOver').style.display = 'none';
         }
 
         function gameLoop() {
             ctx.clearRect(0, 0, width, height);
 
-            updateGameState();
-            drawRoad();
-            updateHUD();
+            drawBackgroundLayers();
+            drawPlayer();
+            drawBullets();
+            drawEnemies();
+            drawParticles();
+            drawPowerUps();
+
+            if (!gameOver) {
+                updateBullets();
+                updateEnemies();
+                updateParticles();
+                updatePowerUps();
+                checkCollisions();
+                updateHUD();
+            } else {
+                showGameOver();
+            }
 
             requestAnimationFrame(gameLoop);
         }
 
-        function handleInput(e) {
-            switch(e.key) {
-                case 'ArrowLeft':
-                    gameState.x = Math.max(gameState.x - 10, 0);
-                    player.style.left = `${gameState.x}px`;
-                    break;
-                case 'ArrowRight':
-                    gameState.x = Math.min(gameState.x + 10, width - 40);
-                    player.style.left = `${gameState.x}px`;
-                    break;
-                case 'ArrowUp':
-                    gameState.isBoosting = true;
-                    break;
+        document.addEventListener('mousemove', (e) => {
+            if (!gameOver) {
+                player.x = e.clientX;
+                player.y = e.clientY;
             }
-        }
+        });
 
-        function handleTouch(e) {
-            e.preventDefault();
-            const touch = e.touches[0];
-            if (touch.clientX < width / 2) {
-                gameState.x = Math.max(gameState.x - 10, 0);
-            } else {
-                gameState.x = Math.min(gameState.x + 10, width - 40);
+        document.addEventListener('click', () => {
+            if (!gameOver) {
+                bullets.push({x: player.x, y: player.y - 20});
+                createParticles(player.x, player.y - 20, 5, '#FFFFFF');
             }
-            player.style.left = `${gameState.x}px`;
-            gameState.isBoosting = true;
-        }
+        });
 
-        window.addEventListener('keydown', handleInput);
-        window.addEventListener('touchstart', handleTouch);
-        window.addEventListener('touchend', () => gameState.isBoosting = false);
+        document.getElementById('restartButton').addEventListener('click', restartGame);
 
+        initBackgroundLayers();
         gameLoop();
     </script>
 </body>
