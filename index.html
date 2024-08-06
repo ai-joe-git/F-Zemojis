@@ -10,11 +10,11 @@
             padding: 0;
             height: 100%;
             overflow: hidden;
+            background-color: #000;
         }
         #gameCanvas {
             width: 100%;
             height: 100%;
-            background-color: #000;
         }
         #hud {
             position: absolute;
@@ -24,6 +24,13 @@
             font-family: Arial, sans-serif;
             font-size: 16px;
         }
+        #player {
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 40px;
+        }
     </style>
 </head>
 <body>
@@ -31,9 +38,11 @@
     <div id="hud">
         Energy: <span id="energy">100</span> | Boost: <span id="boost">100</span> | Speed: <span id="speed">0</span>
     </div>
+    <div id="player">🚀</div>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        const player = document.getElementById('player');
 
         let width, height;
 
@@ -47,7 +56,7 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        const player = {
+        const gameState = {
             x: 0,
             y: 0,
             speed: 0,
@@ -56,115 +65,32 @@
             isBoosting: false
         };
 
-        const track = {
-            width: 2000,
-            length: 10000,
-            curvature: 0,
-            curve: 0
-        };
-
-        const camera = {
-            x: 0,
-            y: 0,
-            distToPlayer: 500,
-            distToPlane: 100
-        };
-
-        const segments = [];
-        const segmentLength = 200;
-        const roadWidth = 2000;
-        const rumbleLength = 3;
-
-        const obstacles = [];
-        const opponents = [];
-
-        const sounds = {
-            boost: new Audio('https://freesound.org/data/previews/455/455528_8427015-lq.mp3'),
-            collision: new Audio('https://freesound.org/data/previews/448/448226_6293289-lq.mp3'),
-            pickup: new Audio('https://freesound.org/data/previews/415/415762_5121236-lq.mp3'),
-            bgMusic: new Audio('https://freesound.org/data/previews/495/495005_5407806-lq.mp3')
-        };
-
-        sounds.bgMusic.loop = true;
-        sounds.bgMusic.volume = 0.5;
-
-        function createTrack() {
-            for (let i = 0; i < track.length; i += segmentLength) {
-                segments.push({
-                    index: Math.floor(i / segmentLength),
-                    point: i,
-                    curve: Math.sin(i * 0.001) * 2,
-                    y: Math.sin(i * 0.002) * 1500
-                });
-            }
-        }
-
-        function projectPoint(point, cameraX, cameraY, cameraZ, cameraDepth, width, height) {
-            const scale = cameraDepth / (point.z - cameraZ);
-            const x = (point.x - cameraX) * scale;
-            const y = (point.y - cameraY) * scale;
-            return {
-                x: Math.round((width / 2) + x * width / 2),
-                y: Math.round((height / 2) - y * height / 2),
-                w: Math.round(scale * roadWidth * width / 2)
-            };
-        }
-
-        function drawSegment(ctx, x1, y1, w1, x2, y2, w2, color) {
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.moveTo(x1 - w1, y1);
-            ctx.lineTo(x2 - w2, y2);
-            ctx.lineTo(x2 + w2, y2);
-            ctx.lineTo(x1 + w1, y1);
-            ctx.closePath();
-            ctx.fill();
+        function updateHUD() {
+            document.getElementById('energy').textContent = Math.round(gameState.energy);
+            document.getElementById('boost').textContent = Math.round(gameState.boost);
+            document.getElementById('speed').textContent = Math.round(gameState.speed);
         }
 
         function drawRoad() {
-            const baseSegment = Math.floor(camera.y / segmentLength);
-            const playerSegment = Math.floor((camera.y + player.y) / segmentLength);
-
-            for (let n = 0; n < 100; n++) {
-                const currentIndex = (baseSegment + n) % segments.length;
-                const segment = segments[currentIndex];
-                const looped = segment.index < baseSegment;
-
-                const p1 = projectPoint({ x: segment.x, y: segment.y, z: segment.point }, camera.x, camera.y, 0, camera.distToPlane, width, height);
-                const p2 = projectPoint({ x: segment.x, y: segment.y, z: segment.point + segmentLength }, camera.x, camera.y, 0, camera.distToPlane, width, height);
-
-                drawSegment(ctx, p1.x, p1.y, p1.w, p2.x, p2.y, p2.w, (segment.index % 2) ? '#4a4a4a' : '#7a7a7a');
-
-                if (segment.index === playerSegment) {
-                    ctx.fillStyle = '🚀';
-                    ctx.font = '40px Arial';
-                    ctx.fillText('🚀', width / 2, height - 100);
-                }
-            }
+            ctx.fillStyle = '#4a4a4a';
+            ctx.fillRect(0, height/2, width, height/2);
         }
 
-        function updatePlayer() {
-            player.speed = player.isBoosting ? Math.min(player.speed + 2, 300) : Math.max(player.speed - 1, 0);
-            camera.y += player.speed;
-
-            if (player.isBoosting) {
-                player.boost = Math.max(player.boost - 0.5, 0);
-                if (player.boost === 0) player.isBoosting = false;
+        function updateGameState() {
+            if (gameState.isBoosting && gameState.boost > 0) {
+                gameState.speed = Math.min(gameState.speed + 2, 300);
+                gameState.boost = Math.max(gameState.boost - 0.5, 0);
             } else {
-                player.boost = Math.min(player.boost + 0.1, 100);
+                gameState.speed = Math.max(gameState.speed - 1, 0);
+                gameState.boost = Math.min(gameState.boost + 0.1, 100);
             }
-        }
-
-        function updateHUD() {
-            document.getElementById('energy').textContent = Math.round(player.energy);
-            document.getElementById('boost').textContent = Math.round(player.boost);
-            document.getElementById('speed').textContent = Math.round(player.speed);
+            gameState.isBoosting = false;
         }
 
         function gameLoop() {
             ctx.clearRect(0, 0, width, height);
 
-            updatePlayer();
+            updateGameState();
             drawRoad();
             updateHUD();
 
@@ -174,16 +100,15 @@
         function handleInput(e) {
             switch(e.key) {
                 case 'ArrowLeft':
-                    player.x = Math.max(player.x - 100, -roadWidth / 2);
+                    gameState.x = Math.max(gameState.x - 10, 0);
+                    player.style.left = `${gameState.x}px`;
                     break;
                 case 'ArrowRight':
-                    player.x = Math.min(player.x + 100, roadWidth / 2);
+                    gameState.x = Math.min(gameState.x + 10, width - 40);
+                    player.style.left = `${gameState.x}px`;
                     break;
                 case 'ArrowUp':
-                    if (player.boost > 0) {
-                        player.isBoosting = true;
-                        sounds.boost.play();
-                    }
+                    gameState.isBoosting = true;
                     break;
             }
         }
@@ -192,27 +117,18 @@
             e.preventDefault();
             const touch = e.touches[0];
             if (touch.clientX < width / 2) {
-                player.x = Math.max(player.x - 100, -roadWidth / 2);
+                gameState.x = Math.max(gameState.x - 10, 0);
             } else {
-                player.x = Math.min(player.x + 100, roadWidth / 2);
+                gameState.x = Math.min(gameState.x + 10, width - 40);
             }
-        }
-
-        function handleTouchEnd() {
-            player.isBoosting = false;
+            player.style.left = `${gameState.x}px`;
+            gameState.isBoosting = true;
         }
 
         window.addEventListener('keydown', handleInput);
-        window.addEventListener('keyup', (e) => {
-            if (e.key === 'ArrowUp') {
-                player.isBoosting = false;
-            }
-        });
         window.addEventListener('touchstart', handleTouch);
-        window.addEventListener('touchend', handleTouchEnd);
+        window.addEventListener('touchend', () => gameState.isBoosting = false);
 
-        createTrack();
-        sounds.bgMusic.play();
         gameLoop();
     </script>
 </body>
